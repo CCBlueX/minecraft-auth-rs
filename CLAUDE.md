@@ -16,6 +16,13 @@ cargo clippy --all-targets -- -D warnings  # lint, denying warnings
 
 There is no separate `tests/` directory and no CI config in this repo yet — tests live next to the code they cover.
 
+## Style
+
+Keep prose short — in commits and in comments alike, less is usually better.
+
+- **Commits:** a brief line saying what it fixes. No paragraphs of rationale or background. Do not add a `Claude-Session:` trailer.
+- **Comments:** explain what the code can't say for itself — a protocol quirk, a non-obvious constraint. Skip the rest.
+
 ## Architecture
 
 This crate implements the Java Edition Microsoft → Xbox Live (SISU) → Minecraft Services login chain as three sequential modules, each following the same internal shape (`config.rs`/`model.rs`/`request.rs` plus a module-specific entry point):
