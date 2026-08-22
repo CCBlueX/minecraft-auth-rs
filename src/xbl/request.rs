@@ -173,6 +173,7 @@ pub async fn device_authenticate(
         .header("x-xbl-contract-version", "1")
         .header("Signature", signature)
         .body(bytes)
+        .timeout(crate::REQUEST_TIMEOUT)
         .send()
         .await?;
 
@@ -235,6 +236,7 @@ pub async fn sisu_authorize(
         .header("Content-Type", "application/json")
         .header("Signature", signature)
         .body(bytes)
+        .timeout(crate::REQUEST_TIMEOUT)
         .send()
         .await?;
 

@@ -45,16 +45,14 @@ impl JavaAuthManager {
     /// The Microsoft token, refreshing it first if it has expired.
     pub async fn msa_token(&self) -> Result<MsaToken> {
         self.msa_token
-            .get_up_to_date(|| self.refresh_msa_token())
+            .get_up_to_date(|cached| self.refresh_msa_token(cached))
             .await
     }
 
-    async fn refresh_msa_token(&self) -> Result<MsaToken> {
-        let cached = self
-            .msa_token
-            .cached()
-            .await
-            .expect("msa token is always seeded at construction");
+    async fn refresh_msa_token(&self, cached: Option<MsaToken>) -> Result<MsaToken> {
+        let cached = cached.ok_or(Error::InvalidState(
+            "no msa token stored; the user must sign in again",
+        ))?;
         let refresh_token = cached.refresh_token.as_deref().ok_or(Error::InvalidState(
             "msa token has no refresh token; the user must sign in again",
         ))?;
@@ -63,7 +61,7 @@ impl JavaAuthManager {
 
     async fn device_token(&self) -> Result<XblDeviceToken> {
         self.xbl_device_token
-            .get_up_to_date(|| self.refresh_device_token())
+            .get_up_to_date(|_| self.refresh_device_token())
             .await
     }
 
@@ -81,7 +79,7 @@ impl JavaAuthManager {
 
     async fn sisu_tokens(&self) -> Result<XblSisuTokens> {
         self.xbl_sisu
-            .get_up_to_date(|| self.refresh_sisu_tokens())
+            .get_up_to_date(|_| self.refresh_sisu_tokens())
             .await
     }
 
@@ -105,7 +103,7 @@ impl JavaAuthManager {
     /// above it as needed.
     pub async fn minecraft_token(&self) -> Result<MinecraftToken> {
         self.minecraft_token
-            .get_up_to_date(|| self.refresh_minecraft_token())
+            .get_up_to_date(|_| self.refresh_minecraft_token())
             .await
     }
 
@@ -118,7 +116,7 @@ impl JavaAuthManager {
     /// Never expires once fetched — call this again explicitly to force a refresh.
     pub async fn entitlements(&self) -> Result<MinecraftEntitlements> {
         self.minecraft_entitlements
-            .get_up_to_date(|| async {
+            .get_up_to_date(|_| async {
                 let token = self.minecraft_token().await?;
                 java::entitlements(&self.http_client, &token).await
             })
@@ -129,7 +127,7 @@ impl JavaAuthManager {
     /// fetched — call this again explicitly after e.g. a name change.
     pub async fn profile(&self) -> Result<MinecraftProfile> {
         self.minecraft_profile
-            .get_up_to_date(|| async {
+            .get_up_to_date(|_| async {
                 let token = self.minecraft_token().await?;
                 java::profile(&self.http_client, &token).await
             })
@@ -139,7 +137,7 @@ impl JavaAuthManager {
     /// Chat-signing key material. Optional — most launchers don't need this.
     pub async fn player_certificates(&self) -> Result<MinecraftPlayerCertificates> {
         self.minecraft_player_certificates
-            .get_up_to_date(|| async {
+            .get_up_to_date(|_| async {
                 let token = self.minecraft_token().await?;
                 java::player_certificates(&self.http_client, &token).await
             })
@@ -333,5 +331,49 @@ impl Builder {
         let msa_token =
             msa::login_with_webview(&self.http_client, &self.application_config, authorize).await?;
         Ok(self.login_msa_token(msa_token))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    /// Regression: `refresh_msa_token` used to re-read the cached token via
+    /// `Holder::cached()` while `get_up_to_date` was already holding that
+    /// holder's lock. `tokio::sync::Mutex` is not reentrant, so every
+    /// expired-token refresh parked forever — a launcher calling this sat on
+    /// "refreshing session" with no error and nothing in its log.
+    #[tokio::test]
+    async fn expired_msa_token_refresh_does_not_deadlock() {
+        let manager = JavaAuthManager::builder(Client::new()).login_msa_token(MsaToken {
+            expire_time_ms: 0,
+            access_token: "expired".to_string(),
+            refresh_token: None,
+        });
+
+        // No refresh token means this fails before any network call — so the
+        // only thing that can make it exceed the timeout is the deadlock.
+        let result = tokio::time::timeout(Duration::from_secs(5), manager.msa_token())
+            .await
+            .expect("msa_token() must return rather than hang on an expired token");
+
+        assert!(matches!(result, Err(Error::InvalidState(_))));
+    }
+
+    #[tokio::test]
+    async fn valid_msa_token_is_returned_from_cache() {
+        let manager = JavaAuthManager::builder(Client::new()).login_msa_token(MsaToken {
+            expire_time_ms: crate::expirable::now_ms() + 60_000,
+            access_token: "still-good".to_string(),
+            refresh_token: Some("refresh".to_string()),
+        });
+
+        let token = tokio::time::timeout(Duration::from_secs(5), manager.msa_token())
+            .await
+            .expect("cached lookup must not hang")
+            .unwrap();
+
+        assert_eq!(token.access_token, "still-good");
     }
 }

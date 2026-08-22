@@ -14,7 +14,12 @@ pub async fn offset_seconds(client: &reqwest::Client) -> i64 {
 }
 
 async fn fetch_offset(client: &reqwest::Client) -> Option<i64> {
-    let response = client.get("https://login.live.com/").send().await.ok()?;
+    let response = client
+        .get("https://login.live.com/")
+        .timeout(crate::REQUEST_TIMEOUT)
+        .send()
+        .await
+        .ok()?;
     let date_header = response
         .headers()
         .get(reqwest::header::DATE)?

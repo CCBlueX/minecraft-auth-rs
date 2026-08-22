@@ -54,7 +54,12 @@ pub async fn launcher_login(client: &Client, xsts_token: &XblXstsToken) -> Resul
         "platform": "PC_LAUNCHER",
         "xtoken": xsts_token.authorization_header(),
     });
-    let response = client.post(LAUNCHER_LOGIN_URL).json(&body).send().await?;
+    let response = client
+        .post(LAUNCHER_LOGIN_URL)
+        .json(&body)
+        .timeout(crate::REQUEST_TIMEOUT)
+        .send()
+        .await?;
     let raw: LauncherLoginResponse = handle(response).await?;
     Ok(MinecraftToken {
         expire_time_ms: now_ms() + raw.expires_in * 1000,
@@ -80,6 +85,7 @@ pub async fn entitlements(
     let response = client
         .get(ENTITLEMENTS_URL)
         .header(reqwest::header::AUTHORIZATION, token.authorization_header())
+        .timeout(crate::REQUEST_TIMEOUT)
         .send()
         .await?;
     let raw: EntitlementsResponse = handle(response).await?;
@@ -98,6 +104,7 @@ pub async fn profile(client: &Client, token: &MinecraftToken) -> Result<Minecraf
     let response = client
         .get(PROFILE_URL)
         .header(reqwest::header::AUTHORIZATION, token.authorization_header())
+        .timeout(crate::REQUEST_TIMEOUT)
         .send()
         .await?;
     if response.status() == StatusCode::NOT_FOUND {
@@ -138,6 +145,7 @@ pub async fn player_certificates(
     let response = client
         .post(PLAYER_CERTIFICATES_URL)
         .header(reqwest::header::AUTHORIZATION, token.authorization_header())
+        .timeout(crate::REQUEST_TIMEOUT)
         .send()
         .await?;
     let raw: PlayerCertificatesResponse = handle(response).await?;

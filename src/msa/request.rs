@@ -40,7 +40,12 @@ async fn post_form<T: DeserializeOwned>(
     url: &str,
     form: &HashMap<&str, &str>,
 ) -> Result<T> {
-    let response = client.post(url).form(form).send().await?;
+    let response = client
+        .post(url)
+        .form(form)
+        .timeout(crate::REQUEST_TIMEOUT)
+        .send()
+        .await?;
     let status = response.status();
     let json: serde_json::Value = response.json().await?;
 
